@@ -25,7 +25,8 @@
         ::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 4px; }
         .propel-accent { color: #00A9FF; }
         .propel-button { background-color: #00A9FF; transition: transform 0.2s ease, box-shadow 0.2s ease; }
-        .propel-button:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0, 169, 255, 0.4); }
+        .propel-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0, 169, 255, 0.4); }
+        .propel-button:disabled { background-color: #005f8e; cursor: not-allowed; }
         .propel-gradient-text { background: linear-gradient(90deg, #00A9FF, #A0E9FF); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .glass-card { background: rgba(26, 26, 26, 0.6); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
         .page { animation: slideIn 0.5s forwards; opacity: 0; }
@@ -49,6 +50,7 @@
             <h1 class="text-5xl font-bold propel-gradient-text mb-2">PropeloKit</h1>
             <p class="text-gray-400 mb-8">The most advanced Firebase AI dashboard.</p>
             <div id="firebaseui-auth-container"></div>
+            <p id="auth-error" class="text-red-400 mt-4"></p>
         </div>
     </div>
     
@@ -77,7 +79,7 @@
                     <h1 class="text-3xl font-bold text-white">Propulsion Hub</h1>
                     <p class="text-gray-400">Welcome back, <span id="user-name">User</span>. Today is <span id="current-date"></span>.</p>
                 </div>
-                <button id="logout-btn" class="bg-gray-800 hover:bg-red-500/50 text-white font-semibold py-2 px-4 rounded-lg flex items-center gap-2">
+                <button id="logout-btn" class="bg-gray-800 hover:bg-red-500/50 text-white font-semibold py-2 px-4 rounded-lg flex items-center gap-2 transition-colors">
                     <i data-lucide="log-out" class="w-4 h-4"></i> Logout
                 </button>
             </header>
@@ -196,22 +198,28 @@
         </div>
     </template>
     
-    <!-- Insert this script at the bottom of the HTML, but before you use any Firebase services -->
+    <!-- FirebaseUI JS -->
+    <script src="https://www.gstatic.com/firebasejs/ui/4.8.1/firebase-ui-auth.js"></script>
+
+    <!-- Firebase Services Module -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js'
-        import { getAuth, onAuthStateChanged, GoogleAuthProvider, EmailAuthProvider } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js'
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, EmailAuthProvider, signOut } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js'
         import { getFirestore, doc, setDoc, collection, addDoc, query, orderBy, limit, onSnapshot } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js'
         import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-functions.js'
         
-        // --- Firebase Config and Initialization ---
-        const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_AUTH_DOMAIN",
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_STORAGE_BUCKET",
-            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-            appId: "YOUR_APP_ID"
-        };
+        // --- 1. PASTE YOUR FIREBASE CONFIGURATION HERE ---
+        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyDAulZh_MKMFLUtH3w74QEs2_nmrKZ-ZgU",
+  authDomain: "propelokit.firebaseapp.com",
+  databaseURL: "https://propelokit-default-rtdb.firebaseio.com",
+  projectId: "propelokit",
+  storageBucket: "propelokit.firebasestorage.app",
+  messagingSenderId: "450333221931",
+  appId: "1:450333221931:web:422f3be7a9772b8f61b66e",
+  measurementId: "G-3Y831Y6EG0"
+};
         
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -239,7 +247,7 @@
                 }, { merge: true });
 
                 updateUserInfo(user);
-                renderView('dashboard');
+                window.renderView('dashboard');
             } else {
                 currentUser = null;
                 if (unsubscribeTrajectories) unsubscribeTrajectories();
@@ -272,7 +280,7 @@
             }
             document.querySelectorAll('.nav-item').forEach(item => {
                 const isToolsView = ['tools', 'summarizer', 'researcher', 'ideas'].includes(viewName);
-                const targetView = isToolsView ? 'tools' : viewName;
+                const targetView = isToolsView ? 'tools' : 'dashboard';
                 item.classList.toggle('bg-gray-700', item.dataset.view === targetView);
                 item.classList.toggle('text-white', item.dataset.view === targetView);
             });
@@ -291,13 +299,18 @@
         // --- Dashboard ---
         function setupDashboardListeners() {
             document.getElementById('user-name').textContent = currentUser.displayName || currentUser.email;
-            document.getElementById('current-date').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-            document.getElementById('logout-btn').onclick = () => auth.signOut();
+            const today = new Date();
+            // Set date based on current location: Dhaka, Bangladesh
+            document.getElementById('current-date').textContent = today.toLocaleDateString('en-US', { timeZone: 'Asia/Dhaka', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            document.getElementById('logout-btn').onclick = () => signOut(auth);
             
             const q = query(collection(db, "users", currentUser.uid, "trajectories"), orderBy("timestamp", "desc"), limit(5));
             unsubscribeTrajectories = onSnapshot(q, snapshot => {
                 const feed = document.getElementById('trajectories-feed');
-                if (snapshot.empty) return;
+                if (snapshot.empty) {
+                     feed.innerHTML = '<p class="text-gray-500">No recent activity.</p>';
+                     return;
+                }
                 feed.innerHTML = '';
                 snapshot.forEach(doc => {
                     const data = doc.data();
@@ -335,32 +348,41 @@
                 outputElem.classList.add('typing-cursor');
 
                 const generateText = httpsCallable(functions, 'ext-firebase-ai-logic-generateText');
-                const stream = await generateText({
-                    prompt: input,
-                    model: 'gemini-2.5-pro',
-                    systemInstruction: system || undefined, // Only include if not empty
-                    generationConfig: { stream: true }
-                });
+                try {
+                    const stream = await generateText({
+                        prompt: input,
+                        model: 'gemini-2.5-pro',
+                        systemInstruction: system || undefined,
+                        generationConfig: { stream: true }
+                    });
 
-                for await (const chunk of stream.data) {
-                    outputElem.textContent += chunk;
+                    for await (const chunk of stream.data) {
+                        outputElem.textContent += chunk;
+                    }
+                    
+                    addDoc(collection(db, "users", currentUser.uid, "trajectories"), {
+                        action: "Summarized", title: input.substring(0, 30) + "...", timestamp: Date.now()
+                    });
+
+                } catch (error) {
+                    console.error("Streaming Error:", error);
+                    outputElem.textContent = "An error occurred during streaming. Please check the console for details.";
+                } finally {
+                    outputElem.classList.remove('typing-cursor');
+                    summarizeBtn.disabled = false;
                 }
-                
-                outputElem.classList.remove('typing-cursor');
-                summarizeBtn.disabled = false;
-                addDoc(collection(db, "users", currentUser.uid, "trajectories"), {
-                    action: "Summarized", title: input.substring(0, 30) + "...", timestamp: Date.now()
-                });
             };
         }
 
         // --- AI TOOL: Researcher (Grounding with Google Search) ---
         function setupResearcherListeners() {
-            document.getElementById('research-btn').onclick = async () => {
+            const researchBtn = document.getElementById('research-btn');
+            researchBtn.onclick = async () => {
                 const input = document.getElementById('researcher-input').value;
                 const outputElem = document.getElementById('researcher-output');
                 if (!input) return;
 
+                researchBtn.disabled = true;
                 outputElem.innerHTML = `<div class="flex items-center gap-2 text-gray-400"><div class="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin"></div>Searching and synthesizing...</div>`;
 
                 const generateText = httpsCallable(functions, 'ext-firebase-ai-logic-generateText');
@@ -375,19 +397,23 @@
                         action: "Researched", title: input.substring(0, 30) + "...", timestamp: Date.now()
                     });
                 } catch (e) {
-                    outputElem.textContent = "An error occurred. The AI model may be unavailable.";
-                    console.error(e);
+                    outputElem.textContent = "An error occurred. The AI model may be unavailable or the request could not be processed.";
+                    console.error("Research Error:", e);
+                } finally {
+                    researchBtn.disabled = false;
                 }
             };
         }
 
         // --- AI TOOL: Ideas (Structured Output) ---
         function setupIdeasListeners() {
-            document.getElementById('ideas-btn').onclick = async () => {
+            const ideasBtn = document.getElementById('ideas-btn');
+            ideasBtn.onclick = async () => {
                 const input = document.getElementById('ideas-input').value;
                 const outputElem = document.getElementById('ideas-output');
                 if (!input) return;
 
+                ideasBtn.disabled = true;
                 outputElem.innerHTML = `<div class="flex items-center gap-2 text-gray-400"><div class="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin"></div>Generating structured ideas...</div>`;
                 
                 const generateText = httpsCallable(functions, 'ext-firebase-ai-logic-generateText');
@@ -425,7 +451,9 @@
 
                 } catch (e) {
                      outputElem.innerHTML = `<p class="text-red-400">Error generating structured data. The model may have returned an invalid format. Please try again.</p>`;
-                     console.error(e);
+                     console.error("Structured Output Error:", e);
+                } finally {
+                    ideasBtn.disabled = false;
                 }
             };
         }
@@ -433,11 +461,10 @@
         // --- Global Nav Listeners ---
         document.querySelector('nav').addEventListener('click', (e) => {
             const navItem = e.target.closest('.nav-item');
-            if (navItem) renderView(navItem.dataset.view);
+            if (navItem) window.renderView(navItem.dataset.view);
         });
 
     </script>
 </body>
 </html>
-
 
